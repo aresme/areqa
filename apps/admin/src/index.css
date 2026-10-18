@@ -1,0 +1,48 @@
+@import '@areqa/shared/styles/tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-mist text-ink font-sans text-sm leading-normal antialiased;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display font-bold tracking-tight;
+  }
+  :focus-visible {
+    @apply ring-mint-strong ring-offset-paper outline-none ring-2 ring-offset-2;
+  }
+  ::selection {
+    @apply bg-mint text-ink;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  .label {
+    @apply text-label font-sans font-semibold uppercase;
+  }
+  .card {
+    @apply border-line bg-paper rounded-lg border;
+  }
+}

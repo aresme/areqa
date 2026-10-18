@@ -1,0 +1,14 @@
+/* Areqa design tokens as CSS variables (RGB channels so Tailwind alpha modifiers work). */
+:root {
+  --color-ink: 11 11 11; /* #0B0B0B */
+  --color-paper: 255 255 255; /* #FFFFFF */
+  --color-mist: 245 247 245; /* #F5F7F5 */
+  --color-line: 228 232 228; /* #E4E8E4 */
+  --color-muted: 107 111 107; /* #6B6F6B */
+  --color-mint: 184 242 196; /* #B8F2C4 */
+  --color-mint-strong: 127 219 147; /* #7FDB93 */
+  --color-mint-deep: 31 122 58; /* #1F7A3A — 5.5:1 on white, passes AA */
+  --color-danger: 214 69 69; /* #D64545 — 4.4:1, use for icons/borders/large text */
+  --color-danger-deep: 180 47 47; /* #B42F2F — small error text, passes AA */
+  color-scheme: light;
+}

@@ -1,0 +1,15 @@
+node_modules
+dist
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+.vercel
+service-account*.json
+scripts/seed/.cache
+.firebase
+.emulator-data
+firestore-debug.log
+ui-debug.log
+firebase-debug.log

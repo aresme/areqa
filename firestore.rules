@@ -1,0 +1,345 @@
+rules_version = '2';
+
+// Areqa — Firestore Security Rules.
+// There is no server (Spark plan, no Cloud Functions), so these rules are the only thing
+// standing between a browser and the database. Every client write is validated here.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ───────────────────────── helpers ─────────────────────────
+
+    function path(p) {
+      return /databases/$(database)/documents/$(p);
+    }
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() && exists(path('admins/' + request.auth.uid));
+    }
+
+    function isOwner() {
+      return isAdmin() && get(path('admins/' + request.auth.uid)).data.role == 'owner';
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function str(v, min, max) {
+      return v is string && v.size() >= min && v.size() <= max;
+    }
+
+    function optStr(v, max) {
+      return v is string && v.size() <= max;
+    }
+
+    function isEmail(v) {
+      return str(v, 5, 120) && v.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+    }
+
+    // Normalised Kenyan mobile/landline: 2547XXXXXXXX or 2541XXXXXXXX.
+    function isKePhone(v) {
+      return v is string && v.matches('^254[17][0-9]{8}$');
+    }
+
+    // An order that does not exist yet but will exist when this request (batch/transaction) commits.
+    function isOrderBeingPlaced(orderId) {
+      return orderId is string
+        && !exists(path('orders/' + orderId))
+        && existsAfter(path('orders/' + orderId));
+    }
+
+    function placedOrder(orderId) {
+      return getAfter(path('orders/' + orderId)).data;
+    }
+
+    // ───────────────────────── catalogue ─────────────────────────
+
+    match /products/{productId} {
+      allow get: if resource.data.status == 'active' || isAdmin();
+      // Storefront queries must include where('status', '==', 'active').
+      allow list: if resource.data.status == 'active' || isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || isCheckoutStockUpdate();
+
+      // Checkout may only lower totalStock and raise salesCount by the same amount,
+      // for an active product that appears in an order created in the same transaction.
+      function isCheckoutStockUpdate() {
+        let sold = resource.data.totalStock - incoming().totalStock;
+        return resource.data.status == 'active'
+          && changedKeys().hasOnly(['totalStock', 'salesCount', 'lastOrderId'])
+          && incoming().totalStock is int
+          && incoming().totalStock >= 0
+          && sold >= 1 && sold <= 100
+          && incoming().salesCount == resource.data.salesCount + sold
+          && isOrderBeingPlaced(incoming().lastOrderId)
+          && productId in placedOrder(incoming().lastOrderId).productIds;
+      }
+    }
+
+    // One doc per variant: {productId}__{variantKey}. Stock is public (shown as availability).
+    match /inventory/{inventoryId} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || isCheckoutDecrement();
+
+      function isCheckoutDecrement() {
+        let qty = resource.data.stock - incoming().stock;
+        return changedKeys().hasOnly(['stock', 'lastOrderId', 'updatedAt'])
+          && incoming().stock is int
+          && incoming().stock >= 0
+          && qty >= 1 && qty <= 10
+          && incoming().updatedAt == request.time
+          && isOrderBeingPlaced(incoming().lastOrderId)
+          && resource.data.productId in placedOrder(incoming().lastOrderId).productIds;
+      }
+    }
+
+    match /categories/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /collections/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // meta/catalogIndex — compact product index maintained by the admin on every product save.
+    match /meta/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ───────────────────────── orders ─────────────────────────
+
+    match /orders/{orderId} {
+      allow create: if isValidNewOrder();
+      allow get, list: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
+      allow update: if isAdmin();
+      allow delete: if isOwner();
+
+      function isValidNewOrder() {
+        let o = incoming();
+        return o.keys().hasOnly([
+            'orderNumber', 'userId', 'customer', 'delivery', 'items', 'productIds', 'itemCount',
+            'subtotal', 'discount', 'deliveryFee', 'total', 'paymentMethod', 'paymentStatus',
+            'paymentRef', 'paidAt', 'status', 'statusHistory', 'adminNotes', 'lookupId',
+            'createdAt', 'updatedAt'
+          ])
+          && o.keys().hasAll([
+            'orderNumber', 'userId', 'customer', 'delivery', 'items', 'productIds', 'itemCount',
+            'subtotal', 'discount', 'deliveryFee', 'total', 'paymentMethod', 'paymentStatus',
+            'status', 'statusHistory', 'lookupId', 'createdAt'
+          ])
+          && o.orderNumber is string && o.orderNumber.matches('^ORD-[0-9]{8}-[0-9]{4}$')
+          && (o.userId == null || (signedIn() && o.userId == request.auth.uid))
+          && o.status == 'pending'
+          && o.paymentStatus == 'unpaid'
+          && o.get('paymentRef', null) == null
+          && o.get('paidAt', null) == null
+          && o.get('adminNotes', '') == ''
+          && o.paymentMethod in ['pay_on_delivery', 'mpesa_after_confirmation']
+          && o.statusHistory is list && o.statusHistory.size() == 1
+          && o.statusHistory[0].status == 'pending'
+          && o.createdAt == request.time
+          && isValidCustomer(o.customer)
+          && isValidDelivery(o.delivery)
+          && isValidItems(o)
+          && o.deliveryFee is int && o.deliveryFee >= 0 && o.deliveryFee <= 5000
+          && o.deliveryFee == o.delivery.fee
+          && isValidDiscount(o)
+          && o.total == o.subtotal - discountAmount(o) + o.deliveryFee
+          && o.lookupId is string
+          && o.lookupId.matches('^' + o.orderNumber + '__[a-f0-9]{64}$')
+          && existsAfter(path('orderLookup/' + o.lookupId));
+      }
+
+      function isValidCustomer(c) {
+        return c.keys().hasOnly(['name', 'email', 'phone'])
+          && str(c.name, 2, 80) && isEmail(c.email) && isKePhone(c.phone);
+      }
+
+      function isValidDelivery(d) {
+        return d.keys().hasOnly(['method', 'county', 'town', 'address', 'notes', 'zoneId', 'zoneName', 'fee', 'estimatedDays'])
+          && d.method in ['delivery', 'pickup']
+          && optStr(d.county, 40) && optStr(d.town, 80) && optStr(d.address, 200) && optStr(d.notes, 500)
+          && optStr(d.zoneName, 80) && optStr(d.estimatedDays, 60)
+          && (d.zoneId == null || d.zoneId is string)
+          && d.fee is int && d.fee >= 0
+          && (d.method == 'pickup' || (str(d.county, 2, 40) && str(d.town, 2, 80) && str(d.address, 3, 200)));
+      }
+
+      // Rules have no loops, so the (max 10) lines are checked by index.
+      function lineOk(items, i) {
+        return i >= items.size() || (
+          items[i].keys().hasOnly(['productId', 'variantKey', 'name', 'slug', 'image', 'color', 'size', 'qty', 'unitPrice'])
+          && str(items[i].productId, 1, 120) && str(items[i].variantKey, 1, 120)
+          && str(items[i].name, 1, 200) && optStr(items[i].image, 500)
+          && items[i].qty is int && items[i].qty >= 1 && items[i].qty <= 10
+          && items[i].unitPrice is int && items[i].unitPrice > 0
+          && items[i].productId in request.resource.data.productIds
+        );
+      }
+
+      function lineTotal(items, i) {
+        return i < items.size() ? items[i].qty * items[i].unitPrice : 0;
+      }
+
+      function lineQty(items, i) {
+        return i < items.size() ? items[i].qty : 0;
+      }
+
+      function isValidItems(o) {
+        let it = o.items;
+        return it is list && it.size() >= 1 && it.size() <= 10
+          && o.productIds is list && o.productIds.size() >= 1 && o.productIds.size() <= 10
+          && lineOk(it, 0) && lineOk(it, 1) && lineOk(it, 2) && lineOk(it, 3) && lineOk(it, 4)
+          && lineOk(it, 5) && lineOk(it, 6) && lineOk(it, 7) && lineOk(it, 8) && lineOk(it, 9)
+          && o.subtotal is int && o.subtotal > 0
+          && o.subtotal == lineTotal(it, 0) + lineTotal(it, 1) + lineTotal(it, 2) + lineTotal(it, 3)
+              + lineTotal(it, 4) + lineTotal(it, 5) + lineTotal(it, 6) + lineTotal(it, 7)
+              + lineTotal(it, 8) + lineTotal(it, 9)
+          && o.itemCount == lineQty(it, 0) + lineQty(it, 1) + lineQty(it, 2) + lineQty(it, 3)
+              + lineQty(it, 4) + lineQty(it, 5) + lineQty(it, 6) + lineQty(it, 7)
+              + lineQty(it, 8) + lineQty(it, 9);
+      }
+
+      function discountAmount(o) {
+        return o.discount == null ? 0 : o.discount.amount;
+      }
+
+      // A discount must be live, meet its minimum, be computed exactly, and have its
+      // usage counter bumped by one in the same transaction.
+      function isValidDiscount(o) {
+        return o.discount == null || isValidDiscountFor(o, get(path('discounts/' + o.discount.code)).data);
+      }
+
+      function isValidDiscountFor(o, d) {
+        let expected = d.type == 'percentage'
+          ? math.floor(o.subtotal * d.value / 100)
+          : (d.value < o.subtotal ? d.value : o.subtotal);
+        return o.discount.keys().hasOnly(['code', 'amount'])
+          && d.isActive == true
+          && request.time >= d.startsAt && request.time < d.endsAt
+          && o.subtotal >= d.minOrder
+          && (d.usageLimit == null || d.usedCount < d.usageLimit)
+          && o.discount.amount == expected
+          && getAfter(path('discounts/' + o.discount.code)).data.usedCount == d.usedCount + 1;
+      }
+    }
+
+    // Public, PII-free tracking doc. The id includes sha256(phone), so knowing an order
+    // number alone is not enough to read it, and listing is never allowed.
+    match /orderLookup/{lookupId} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isOrderBeingPlaced(incoming().orderId)
+        && placedOrder(incoming().orderId).lookupId == lookupId
+        && incoming().status == 'pending'
+        && incoming().keys().hasOnly(['orderId', 'orderNumber', 'status', 'statusHistory', 'itemCount', 'total', 'deliveryMethod', 'createdAt'])
+        && incoming().orderNumber == placedOrder(incoming().orderId).orderNumber
+        && incoming().total == placedOrder(incoming().orderId).total
+        && incoming().createdAt == request.time;
+      allow update, delete: if isAdmin();
+    }
+
+    match /discounts/{code} {
+      // Customers can check a code they know; nobody but admins can enumerate codes.
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        changedKeys().hasOnly(['usedCount', 'lastOrderId'])
+        && incoming().usedCount == resource.data.usedCount + 1
+        && isOrderBeingPlaced(incoming().lastOrderId)
+        && placedOrder(incoming().lastOrderId).discount.code == code
+      );
+    }
+
+    // ───────────────────────── customers ─────────────────────────
+
+    match /users/{uid} {
+      allow get: if (signedIn() && request.auth.uid == uid) || isAdmin();
+      allow list: if isAdmin();
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && incoming().keys().hasOnly(['displayName', 'email', 'phone', 'addresses', 'wishlist', 'cart', 'createdAt', 'updatedAt'])
+        && (!('addresses' in incoming()) || (incoming().addresses is list && incoming().addresses.size() <= 10))
+        && (!('wishlist' in incoming()) || (incoming().wishlist is list && incoming().wishlist.size() <= 200))
+        && (!('cart' in incoming()) || (incoming().cart is list && incoming().cart.size() <= 10));
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /reviews/{reviewId} {
+      // Storefront queries must include where('status', '==', 'approved').
+      allow read: if resource.data.status == 'approved'
+        || isAdmin()
+        || (signedIn() && resource.data.userId == request.auth.uid);
+      // Only customers whose (delivered) order contains the product may review it.
+      allow create: if signedIn()
+        && incoming().keys().hasOnly(['productId', 'orderId', 'userId', 'userName', 'rating', 'title', 'body', 'status', 'createdAt'])
+        && incoming().userId == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().rating is int && incoming().rating >= 1 && incoming().rating <= 5
+        && str(incoming().userName, 1, 60) && optStr(incoming().title, 120) && str(incoming().body, 10, 2000)
+        && incoming().createdAt == request.time
+        && get(path('orders/' + incoming().orderId)).data.userId == request.auth.uid
+        && get(path('orders/' + incoming().orderId)).data.status == 'delivered'
+        && incoming().productId in get(path('orders/' + incoming().orderId)).data.productIds;
+      allow update, delete: if isAdmin();
+    }
+
+    // ───────────────────────── public forms ─────────────────────────
+
+    match /messages/{id} {
+      allow create: if incoming().keys().hasOnly(['name', 'email', 'phone', 'subject', 'message', 'status', 'createdAt'])
+        && str(incoming().name, 2, 80) && isEmail(incoming().email)
+        && optStr(incoming().phone, 20) && optStr(incoming().subject, 120)
+        && str(incoming().message, 10, 3000)
+        && incoming().status == 'new'
+        && incoming().createdAt == request.time;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Doc id is the lowercase email, so repeat sign-ups fail harmlessly instead of duplicating.
+    match /newsletter/{email} {
+      allow create: if isEmail(email)
+        && incoming().keys().hasOnly(['email', 'source', 'createdAt'])
+        && incoming().email == email
+        && optStr(incoming().source, 40)
+        && incoming().createdAt == request.time;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ───────────────────────── store config ─────────────────────────
+
+    match /settings/{id} {
+      allow read: if true;
+      allow write: if isOwner();
+    }
+
+    match /deliveryZones/{id} {
+      allow read: if true;
+      allow write: if isOwner();
+    }
+
+    match /content/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Admin membership. Add the first owner from the Firebase console or `npm run seed -- --admin`.
+    match /admins/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isOwner());
+      allow list: if isOwner();
+      allow write: if isOwner();
+    }
+  }
+}
