@@ -7,3 +7,4 @@ export * from './order';
 export * from './catalog';
 export * from './delivery';
 export * from './discount';
+export * from './markdown';

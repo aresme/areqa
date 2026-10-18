@@ -1,19 +1,8 @@
 import { Link } from 'react-router-dom';
 import { formatKES, type Product } from '@areqa/shared';
 import { useDeliveryZones, useSettings } from '@/features/content/hooks';
+import { Markdown } from '@/components/Markdown';
 import { AccordionItem } from '@/components/ui/Accordion';
-
-function Paragraphs({ text }: { text: string }) {
-  return (
-    <>
-      {text.split(/\n{2,}/).map((p, i) => (
-        <p key={i} className="mb-3 last:mb-0">
-          {p}
-        </p>
-      ))}
-    </>
-  );
-}
 
 export function ProductDetails({ product }: { product: Product }) {
   const { data: zones = [] } = useDeliveryZones();
@@ -21,10 +10,10 @@ export function ProductDetails({ product }: { product: Product }) {
   return (
     <div className="border-line mt-10 border-t">
       <AccordionItem title="Description" defaultOpen>
-        <Paragraphs text={product.description} />
+        <Markdown source={product.description} size="sm" />
       </AccordionItem>
       <AccordionItem title="Material & care">
-        <Paragraphs text={product.materialCare} />
+        <Markdown source={product.materialCare} size="sm" />
       </AccordionItem>
       <AccordionItem title="Delivery & returns">
         {zones.length > 0 && (
