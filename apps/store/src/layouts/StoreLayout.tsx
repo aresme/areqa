@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import { Outlet, ScrollRestoration } from 'react-router-dom';
 import { CartDrawer } from '@/components/cart/CartDrawer';
+import { AuthSync } from '@/features/auth/AuthSync';
 import { AnnouncementBar } from '@/components/layout/AnnouncementBar';
 import { Footer } from '@/components/layout/Footer';
 import { Header } from '@/components/layout/Header';
@@ -34,6 +35,7 @@ export function StoreLayout() {
         <SearchOverlay />
         <CartDrawer />
         <Toaster />
+        <AuthSync />
         <ScrollRestoration getKey={(loc) => loc.pathname} />
       </div>
     </QuickAddProvider>

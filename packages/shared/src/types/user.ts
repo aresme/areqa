@@ -12,9 +12,16 @@ export interface Address {
   isDefault: boolean;
 }
 
+/** Cart line as synced to users/{uid}.cart. Display fields are a snapshot; checkout re-reads prices. */
 export interface CartLine {
   productId: string;
   variantKey: string;
+  slug: string;
+  name: string;
+  image: string;
+  color: string;
+  size: string;
+  price: number;
   qty: number;
 }
 

@@ -1,19 +1,9 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { MAX_ORDER_LINES, MAX_QTY_PER_LINE, type KES } from '@areqa/shared';
+import { MAX_ORDER_LINES, MAX_QTY_PER_LINE, type CartLine } from '@areqa/shared';
 
 /** Display snapshot taken when the item is added. Checkout always re-reads live prices. */
-export interface CartItem {
-  productId: string;
-  variantKey: string;
-  slug: string;
-  name: string;
-  image: string;
-  color: string;
-  size: string;
-  price: KES;
-  qty: number;
-}
+export type CartItem = CartLine;
 
 export type AddResult = 'added' | 'updated' | 'line-limit' | 'qty-limit';
 

@@ -5,9 +5,11 @@ import { ButtonLink } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useCatalog, useCatalogMap } from '@/features/catalog/hooks';
 import { useWishlist } from '@/features/wishlist/wishlistStore';
+import { useAuth } from '@/features/auth/authStore';
 
 export default function WishlistPage() {
   const ids = useWishlist((s) => s.ids);
+  const signedIn = useAuth((s) => s.status === 'user');
   const { isLoading } = useCatalog();
   const catalog = useCatalogMap();
   const entries = ids.map((id) => catalog.get(id)).filter((e) => e !== undefined);
@@ -19,7 +21,9 @@ export default function WishlistPage() {
         Wishlist {entries.length > 0 && <span className="text-muted">({entries.length})</span>}
       </h1>
       <p className="text-muted mt-2 text-sm">
-        Saved on this device. Sign in to keep your wishlist across devices.
+        {signedIn
+          ? 'Synced to your account.'
+          : 'Saved on this device. Sign in to keep your wishlist across devices.'}
       </p>
       <div className="mt-10">
         {isLoading && ids.length > 0 ? (

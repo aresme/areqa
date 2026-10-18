@@ -18,9 +18,12 @@ import {
   doc,
   getDoc,
   getDocs,
+  orderBy,
+  query,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
   writeBatch,
   type Firestore,
 } from 'firebase/firestore';
@@ -517,5 +520,92 @@ describe('reviews', () => {
     await assertFails(
       setDoc(doc(collection(user('alice'), 'reviews')), { ...review, status: 'approved' }),
     );
+  });
+
+  it('lets customers list only their own orders and reviews (account pages)', async () => {
+    const placed = await placeOrder(user('alice'), baseInput({ userId: 'alice' }));
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore() as unknown as Firestore;
+      await setDoc(doc(db, `reviews/${placed.id}_tee`), {
+        productId: 'tee',
+        orderId: placed.id,
+        userId: 'alice',
+        userName: 'A',
+        rating: 5,
+        title: '',
+        body: 'Lovely fabric overall.',
+        status: 'pending',
+        createdAt: Timestamp.now(),
+      });
+      await setDoc(doc(db, 'reviews/other'), {
+        productId: 'tee',
+        orderId: 'x',
+        userId: 'bob',
+        userName: 'B',
+        rating: 2,
+        title: '',
+        body: 'Not for me, sorry.',
+        status: 'pending',
+        createdAt: Timestamp.now(),
+      });
+    });
+    const mine = await assertSucceeds(
+      getDocs(
+        query(
+          collection(user('alice'), 'orders'),
+          where('userId', '==', 'alice'),
+          orderBy('createdAt', 'desc'),
+        ),
+      ),
+    );
+    expect(mine.size).toBe(1);
+    const reviews = await assertSucceeds(
+      getDocs(
+        query(
+          collection(user('alice'), 'reviews'),
+          where('userId', '==', 'alice'),
+          orderBy('createdAt', 'desc'),
+        ),
+      ),
+    );
+    expect(reviews.size).toBe(1);
+    await assertFails(
+      getDocs(query(collection(user('alice'), 'reviews'), where('userId', '==', 'bob'))),
+    );
+    // The public product page query only sees approved reviews.
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(guest(), 'reviews'),
+          where('productId', '==', 'tee'),
+          where('status', '==', 'approved'),
+        ),
+      ),
+    );
+    await assertFails(
+      getDocs(query(collection(guest(), 'reviews'), where('productId', '==', 'tee'))),
+    );
+  });
+});
+
+describe('customer profiles', () => {
+  it('lets a user write only their own profile with allowed fields', async () => {
+    const ref = doc(user('alice'), 'users/alice');
+    await assertSucceeds(
+      setDoc(ref, {
+        displayName: 'Alice',
+        email: 'a@x.com',
+        phone: '',
+        addresses: [],
+        wishlist: [],
+        cart: [],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }),
+    );
+    await assertSucceeds(updateDoc(ref, { wishlist: ['tee'], updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(ref, { role: 'owner' }));
+    await assertFails(setDoc(doc(user('alice'), 'users/bob'), { displayName: 'Hijack' }));
+    await assertFails(getDoc(doc(user('bob'), 'users/alice')));
   });
 });

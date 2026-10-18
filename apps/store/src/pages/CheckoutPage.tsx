@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
@@ -8,6 +8,9 @@ import {
   PAYMENT_METHOD_LABELS,
   checkoutSchema,
   formatKES,
+  formatKenyanPhone,
+  normalizeKenyanPhone,
+  type Address,
   type CheckoutForm,
 } from '@areqa/shared';
 import { CheckoutError } from '@areqa/shared/services';
@@ -20,6 +23,13 @@ import { RadioCard } from '@/components/form/RadioCard';
 import { Seo } from '@/components/Seo';
 import { Button, ButtonLink } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
+import {
+  defaultAddress,
+  newAddressId,
+  saveAddresses,
+  upsertAddress,
+} from '@/features/account/addresses';
+import { useAuth } from '@/features/auth/authStore';
 import { useCart } from '@/features/cart/cartStore';
 import { useLiveCart } from '@/features/cart/useLiveCart';
 import { useDeliveryQuote } from '@/features/checkout/delivery';
@@ -44,8 +54,11 @@ export default function CheckoutPage() {
   const { check } = useDiscountCheck(code, subtotal);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const { user, profile } = useAuth();
+  const [saveAddress, setSaveAddress] = useState(true);
+  const prefilled = useRef(false);
 
-  const { register, handleSubmit, control, formState } = useForm<CheckoutForm>({
+  const { register, handleSubmit, control, formState, reset, getValues } = useForm<CheckoutForm>({
     resolver: zodResolver(checkoutSchema),
     defaultValues: {
       name: '',
@@ -70,6 +83,42 @@ export default function CheckoutPage() {
   );
   const errors = formState.errors;
 
+  const applyAddress = (a: Address) =>
+    reset({
+      ...getValues(),
+      method: 'delivery',
+      name: a.name || getValues('name'),
+      phone: formatKenyanPhone(a.phone),
+      county: a.county,
+      town: a.town,
+      address: a.address,
+      notes: a.notes,
+    });
+
+  // Pre-fill once from the signed-in customer's profile and default address.
+  useEffect(() => {
+    if (prefilled.current || !user || !profile) return;
+    prefilled.current = true;
+    const addr = defaultAddress(profile.addresses);
+    reset({
+      ...getValues(),
+      name: getValues('name') || profile.displayName,
+      email: getValues('email') || user.email,
+      phone: getValues('phone') || (profile.phone ? formatKenyanPhone(profile.phone) : ''),
+      ...(addr && !getValues('county')
+        ? { county: addr.county, town: addr.town, address: addr.address, notes: addr.notes }
+        : {}),
+    });
+  }, [user, profile, reset, getValues]);
+
+  const matchesSaved = (form: CheckoutForm) =>
+    (profile?.addresses ?? []).some(
+      (a) =>
+        a.county === form.county &&
+        a.town.toLowerCase() === form.town.trim().toLowerCase() &&
+        a.address.toLowerCase() === form.address.trim().toLowerCase(),
+    );
+
   const onSubmit = async (form: CheckoutForm) => {
     setSubmitError(null);
     if (form.website) return; // honeypot
@@ -86,7 +135,7 @@ export default function CheckoutPage() {
     try {
       const order = await submitOrder(
         {
-          userId: null,
+          userId: user?.uid ?? null,
           lines: items.map((i) => ({
             productId: i.productId,
             variantKey: i.variantKey,
@@ -110,6 +159,27 @@ export default function CheckoutPage() {
         },
         settings,
       );
+      if (
+        user &&
+        profile &&
+        form.method === 'delivery' &&
+        saveAddress &&
+        !matchesSaved(form) &&
+        profile.addresses.length < 10
+      ) {
+        const address: Address = {
+          id: newAddressId(),
+          label: profile.addresses.length === 0 ? 'Home' : 'Address',
+          name: form.name,
+          phone: normalizeKenyanPhone(form.phone),
+          county: form.county,
+          town: form.town.trim(),
+          address: form.address.trim(),
+          notes: form.notes.trim(),
+          isDefault: profile.addresses.length === 0,
+        };
+        saveAddresses(user.uid, upsertAddress(profile.addresses, address)).catch(() => undefined);
+      }
       cart.clear();
       clearDiscount();
       navigate(`/order/${order.orderNumber}`, { replace: true });
@@ -270,6 +340,24 @@ export default function CheckoutPage() {
               />
             </fieldset>
 
+            {method === 'delivery' && profile && profile.addresses.length > 0 && (
+              <div className="mt-6">
+                <p className="mb-2 text-sm font-medium">Saved addresses</p>
+                <div className="flex flex-wrap gap-2">
+                  {profile.addresses.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => applyAddress(a)}
+                      className="border-line hover:border-ink hover:bg-mint rounded-full border px-3 py-1.5 text-xs transition-colors"
+                    >
+                      <strong>{a.label}</strong> · {a.town}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {method === 'delivery' && (
               <div className="mt-6 grid gap-4 sm:grid-cols-2">
                 <Field label="County" error={errors.county?.message}>
@@ -330,6 +418,17 @@ export default function CheckoutPage() {
                   </p>
                 ) : null}
               </div>
+            )}
+            {method === 'delivery' && user && (
+              <label className="mt-4 flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={saveAddress}
+                  onChange={(e) => setSaveAddress(e.target.checked)}
+                  className="accent-ink size-4"
+                />{' '}
+                Save this address to my account
+              </label>
             )}
             <Field label="Delivery notes" optional className="mt-4">
               {(a) => (
