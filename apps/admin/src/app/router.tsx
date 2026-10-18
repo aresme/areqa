@@ -1,6 +1,7 @@
-import { lazy } from 'react';
+import { lazy, Suspense } from 'react';
 import { createBrowserRouter } from 'react-router-dom';
 import { AdminLayout } from '@/layouts/AdminLayout';
+import { RequireAdmin } from '@/components/RequireAdmin';
 
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
 const ProductsPage = lazy(() => import('@/pages/ProductsPage'));
@@ -17,7 +18,14 @@ const LoginPage = lazy(() => import('@/pages/LoginPage'));
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'));
 
 export const router = createBrowserRouter([
-  { path: '/login', element: <LoginPage /> },
+  {
+    path: '/login',
+    element: (
+      <Suspense fallback={null}>
+        <LoginPage />
+      </Suspense>
+    ),
+  },
   {
     element: <AdminLayout />,
     children: [
@@ -31,7 +39,14 @@ export const router = createBrowserRouter([
       { path: 'reviews', element: <ReviewsPage /> },
       { path: 'messages', element: <MessagesPage /> },
       { path: 'content/*', element: <ContentPage /> },
-      { path: 'settings/*', element: <SettingsPage /> },
+      {
+        path: 'settings/*',
+        element: (
+          <RequireAdmin ownerOnly>
+            <SettingsPage />
+          </RequireAdmin>
+        ),
+      },
       { path: '*', element: <NotFoundPage /> },
     ],
   },
