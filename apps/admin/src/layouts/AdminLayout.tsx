@@ -56,10 +56,10 @@ export function AdminLayout() {
 
   return (
     <RequireAdmin>
-      <div className="min-h-dvh lg:pl-60">
+      <div className="min-h-dvh lg:pl-60 print:pl-0">
         <aside
           className={cn(
-            'border-line bg-paper fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r transition-transform lg:translate-x-0',
+            'border-line bg-paper fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r transition-transform lg:translate-x-0 print:hidden',
             open ? 'translate-x-0' : '-translate-x-full',
           )}
         >
@@ -110,7 +110,7 @@ export function AdminLayout() {
           />
         )}
 
-        <header className="border-line bg-paper sticky top-0 z-20 flex h-16 items-center gap-4 border-b px-4 lg:px-8">
+        <header className="border-line bg-paper sticky top-0 z-20 flex h-16 items-center gap-4 border-b px-4 lg:px-8 print:hidden">
           <button className="lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu">
             <Menu className="size-5" />
           </button>
@@ -148,7 +148,7 @@ export function AdminLayout() {
             )}
           </div>
         </header>
-        <main className="p-4 lg:p-8">
+        <main className="p-4 lg:p-8 print:p-0">
           <Suspense fallback={<Skeleton className="h-64 w-full" />}>
             <Outlet />
           </Suspense>

@@ -46,3 +46,12 @@
     @apply border-line bg-paper rounded-lg border;
   }
 }
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+  body {
+    background: #fff;
+  }
+}

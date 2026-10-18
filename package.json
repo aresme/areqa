@@ -20,7 +20,9 @@
     "emulators": "firebase emulators:start --project areqa-store",
     "seed:emulator": "tsx scripts/seed/index.ts --emulator",
     "test": "vitest run --exclude 'tests/rules/**'",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-areqa-test 'vitest run tests/rules'"
+    "test:rules": "firebase emulators:exec --only firestore --project demo-areqa-test 'vitest run tests/rules'",
+    "dev:store:emu": "npm run dev:emu -w @areqa/store",
+    "dev:admin:emu": "npm run dev:emu -w @areqa/admin"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

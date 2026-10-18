@@ -34,10 +34,11 @@ Both apps run without keys: they show "not connected" states until Firebase is c
 ```bash
 npm run emulators         # terminal 1 — Firestore + Auth emulators (UI at http://localhost:4000)
 npm run seed:emulator     # terminal 2 — load the sample catalogue into the emulator
-npm run dev:store         # http://localhost:5173
+npm run dev:store:emu     # http://localhost:5173 — talks to the emulators only
+npm run dev:admin:emu     # http://localhost:5174
 ```
 
-Set `VITE_FIREBASE_EMULATOR=true` in `apps/*/.env` to point the apps at the emulators, and `false` to use the real project. Emulator data resets when it stops; re-run the seed.
+The `:emu` scripts use Vite's `emulator` mode (`apps/*/.env.emulator`), so they can never touch the live project. Plain `npm run dev:store` / `dev:admin` use the real project from `.env`. Emulator data resets when it stops; re-run the seed. Create test users at http://localhost:4000/auth.
 
 ## 1. Create the Firebase project
 
