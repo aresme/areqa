@@ -85,6 +85,37 @@ Firebase Storage needs the paid Blaze plan, so images live on Cloudinary's free 
 2. Signing mode **Unsigned**, name `areqa_unsigned`, folder `areqa`.
 3. Put your cloud name and preset name in both `.env` files.
 
+## 6. EmailJS (order emails)
+
+All four emails (order confirmation, new-order alert, status update, contact form) are
+rendered as branded HTML in the browser and sent through **one generic EmailJS template**,
+so the free plan's 2-template limit is never an issue.
+
+1. [emailjs.com](https://www.emailjs.com) → **Email Services → Add service** (Gmail works) → note the **Service ID**.
+2. **Email Templates → Create template**, then set:
+   - **To Email:** `{{to_email}}`  ·  **From Name:** `Areqa`  ·  **Reply To:** `{{reply_to}}`
+   - **Subject:** `{{subject}}`
+   - **Content:** switch the editor to **code / HTML** and enter only: `{{{html}}}` (three braces = unescaped HTML)
+3. Note the **Template ID**, and your **Public Key** (Account → General).
+4. In `apps/store/.env` set `VITE_EMAILJS_PUBLIC_KEY`, `VITE_EMAILJS_SERVICE_ID`, and put the same template id in both `VITE_EMAILJS_TEMPLATE_CUSTOMER` and `VITE_EMAILJS_TEMPLATE_STORE`. In `apps/admin/.env` set the same public key, service and template.
+5. **Account → Security:** add your Vercel domains to the allowed origins.
+
+| Template variable | Content |
+| --- | --- |
+| `to_email`, `to_name` | Recipient (customer, or the store's order-alert email from Settings) |
+| `subject` | Ready-made subject line |
+| `html` | Full branded email body |
+| `reply_to` | Store email for customer emails; customer email for store alerts |
+
+**Limits:** the free plan sends about **200 emails a month**. Each order uses 2 (customer + store alert) and each status change 1, so expect roughly 50–60 orders a month before upgrading or switching the store alert off (clear "Order alert email" in Settings). Failed emails are logged to the console and **never block an order**.
+
+## Testing
+
+```bash
+npm test             # unit tests (discount maths, zones, phone parsing, shop filters)
+npm run test:rules   # Firestore rules + real checkout transaction against the emulator (needs Java)
+```
+
 ## Scripts
 
 | Command | What it does |

@@ -4,6 +4,7 @@ const env = import.meta.env;
 export const config = {
   siteUrl: (env.VITE_SITE_URL || 'http://localhost:5173').replace(/\/$/, ''),
   whatsappFallback: env.VITE_WHATSAPP_NUMBER || '',
+  adminUrl: (env.VITE_ADMIN_URL || 'http://localhost:5174').replace(/\/$/, ''),
   emailjs: {
     publicKey: env.VITE_EMAILJS_PUBLIC_KEY || '',
     serviceId: env.VITE_EMAILJS_SERVICE_ID || '',

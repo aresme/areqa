@@ -5,3 +5,5 @@ export * from './phone';
 export * from './image';
 export * from './order';
 export * from './catalog';
+export * from './delivery';
+export * from './discount';

@@ -1,9 +1,12 @@
+import { useLocation } from 'react-router-dom';
 import { whatsappLink } from '@areqa/shared';
 import { useSettings } from '@/features/content/hooks';
 
 export function WhatsAppButton() {
   const { settings } = useSettings();
-  if (!settings.whatsappNumber) return null;
+  const { pathname } = useLocation();
+  // Keep the checkout form unobstructed.
+  if (!settings.whatsappNumber || pathname === '/checkout') return null;
   return (
     <a
       href={whatsappLink(settings.whatsappNumber, `Hi ${settings.storeName}, I have a question.`)}

@@ -10,6 +10,7 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_EMULATOR?: string;
   readonly VITE_FIREBASE_MEASUREMENT_ID?: string;
   readonly VITE_SITE_URL?: string;
+  readonly VITE_ADMIN_URL?: string;
   readonly VITE_WHATSAPP_NUMBER?: string;
   readonly VITE_CLOUDINARY_CLOUD_NAME?: string;
   readonly VITE_EMAILJS_PUBLIC_KEY?: string;
